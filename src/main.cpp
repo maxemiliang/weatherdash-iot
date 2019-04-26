@@ -19,17 +19,17 @@
 */
 
 #include <ESP8266WiFi.h>
-#include <WiFiClientSecure.h>
-#include <Wire.h>
-#include <SPI.h>
+#include <ESP8266HTTPClient.h>
+
 #include <Adafruit_Sensor.h>
-#include <Adafruit_BME280.h>
+#include <DHT.h>
+#include <DHT_U.h>
 
-#define SEALEVELPRESSURE_HPA (1013.25)
+#define DHTPIN D4 // Digital pin connected to the DHT sensor
 
-Adafruit_BME280 bme; // I2C
-//Adafruit_BME280 bme(BME_CS); // hardware SPI
-//Adafruit_BME280 bme(BME_CS, BME_MOSI, BME_MISO, BME_SCK); // software SPI
+#define DHTTYPE DHT11
+
+DHT_Unified dht(DHTPIN, DHTTYPE);
 
 #ifndef STASSID
 #define STASSID "iot-net"
@@ -41,12 +41,13 @@ const char *password = STAPSK;
 
 const char *host = "weatherdash-api.app.maxemiliang.cloud";
 const int httpsPort = 443;
+const int httpPort = 80;
 
 // Use web browser to view and copy
 // SHA1 fingerprint of the certificate
 const char fingerprint[] PROGMEM = "9c 78 2d 96 9a 80 20 16 8e dc d9 6d 2b 72 a6 69 e8 c6 d9 e3";
 
-unsigned long delayTime;
+unsigned long delayMS;
 
 void setup()
 {
@@ -66,98 +67,129 @@ void setup()
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP());
 
-  // Use WiFiClientSecure class to create TLS connection
-  WiFiClientSecure client;
-  Serial.print("connecting to ");
-  Serial.println(host);
+  // Initialize device.
+  dht.begin();
+  Serial.println(F("DHTxx Unified Sensor Example"));
+  // Print temperature sensor details.
+  sensor_t sensor;
+  dht.temperature().getSensor(&sensor);
 
-  Serial.printf("Using fingerprint '%s'\n", fingerprint);
-  client.setFingerprint(fingerprint);
-
-  if (!client.connect(host, httpsPort))
-  {
-    Serial.println("connection failed");
-    return;
-  }
-
-  String url = "/";
-  Serial.print("requesting URL: ");
-  Serial.println(url);
-
-  client.print(String("GET ") + url + " HTTP/1.1\r\n" +
-               "Host: " + host + "\r\n" +
-               "User-Agent: nodemcu_sensor1\r\n" +
-               "Connection: close\r\n\r\n");
-
-  Serial.println("request sent");
-  while (client.connected())
-  {
-    String line = client.readStringUntil('\n');
-    if (line == "\r")
-    {
-      Serial.println("headers received");
-      break;
-    }
-  }
-  String line = client.readStringUntil('\n');
-  if (line.startsWith("{\"response\":\"OK!\""))
-  {
-    Serial.println("esp8266/Arduino Connected to api Successfully!");
-  }
-  else
-  {
-    Serial.println("esp8266/Arduino Connected to api failed!");
-  }
-  Serial.println("reply was:");
-  Serial.println("==========");
-  Serial.println(line);
-  Serial.println("==========");
-  Serial.println("closing connection");
-
-  bool status;
-
-  Wire.begin();
-
-  // default settings
-  // (you can also pass in a Wire library object like &Wire2)
-  status = bme.begin(0x76);
-  if (!status)
-  {
-    Serial.println("Could not find a valid BME280 sensor, check wiring!");
-    while (1)
-      ;
-  }
-
-  Serial.println("-- Default Test --");
-  delayTime = 1000;
-
-  Serial.println();
+  Serial.println(F("------------------------------------"));
+  Serial.println(F("Temperature Sensor"));
+  Serial.print(F("Sensor Type: "));
+  Serial.println(sensor.name);
+  Serial.print(F("Driver Ver:  "));
+  Serial.println(sensor.version);
+  Serial.print(F("Unique ID:   "));
+  Serial.println(sensor.sensor_id);
+  Serial.print(F("Max Value:   "));
+  Serial.print(sensor.max_value);
+  Serial.println(F("°C"));
+  Serial.print(F("Min Value:   "));
+  Serial.print(sensor.min_value);
+  Serial.println(F("°C"));
+  Serial.print(F("Resolution:  "));
+  Serial.print(sensor.resolution);
+  Serial.println(F("°C"));
+  Serial.println(F("------------------------------------"));
+  // Print humidity sensor details.
+  dht.humidity().getSensor(&sensor);
+  Serial.println(F("Humidity Sensor"));
+  Serial.print(F("Sensor Type: "));
+  Serial.println(sensor.name);
+  Serial.print(F("Driver Ver:  "));
+  Serial.println(sensor.version);
+  Serial.print(F("Unique ID:   "));
+  Serial.println(sensor.sensor_id);
+  Serial.print(F("Max Value:   "));
+  Serial.print(sensor.max_value);
+  Serial.println(F("%"));
+  Serial.print(F("Min Value:   "));
+  Serial.print(sensor.min_value);
+  Serial.println(F("%"));
+  Serial.print(F("Resolution:  "));
+  Serial.print(sensor.resolution);
+  Serial.println(F("%"));
+  Serial.println(F("------------------------------------"));
+  // Set delay between sensor readings based on sensor details.
+  delayMS = 10000;
 }
 
 void printValues()
 {
-  Serial.print("Temperature = ");
-  Serial.print(bme.readTemperature());
-  Serial.println(" *C");
 
-  Serial.print("Pressure = ");
+  sensors_event_t event;
+  dht.temperature().getEvent(&event);
+  if (isnan(event.temperature))
+  {
+    Serial.println(F("Error reading temperature!"));
+  }
+  else
+  {
+    Serial.print(F("Temperature: "));
+    Serial.print(event.temperature);
+    Serial.println(F("°C"));
+  }
 
-  Serial.print(bme.readPressure() / 100.0F);
-  Serial.println(" hPa");
+  char temp[10];
 
-  Serial.print("Approx. Altitude = ");
-  Serial.print(bme.readAltitude(SEALEVELPRESSURE_HPA));
-  Serial.println(" m");
+  dtostrf(event.temperature, 8, 3, temp);
 
-  Serial.print("Humidity = ");
-  Serial.print(bme.readHumidity());
-  Serial.println(" %");
+  // Get humidity event and print its value.
+  dht.humidity().getEvent(&event);
+  if (isnan(event.relative_humidity))
+  {
+    Serial.println(F("Error reading humidity!"));
+  }
+  else
+  {
+    Serial.print(F("Humidity: "));
+    Serial.print(event.relative_humidity);
+    Serial.println(F("%"));
+  }
 
-  Serial.println();
+  HTTPClient http;
+  Serial.print("connecting to ");
+  Serial.println(host);
+  //http.setFingerprint(fingerprint);
+
+  String url = "http://weatherdash-api.app.maxemiliang.cloud/sensor";
+  Serial.print("requesting URL: ");
+  Serial.println(url);
+
+  http.begin(url);
+
+  Serial.println("request sent");
+
+  http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+
+  char request[128] = "source_name=nodemcu_1_turku&token=SecretTokenHello&temperature=";
+
+  char humText[30] = "&humidity=";
+  char humidity[10];
+
+  dtostrf(event.relative_humidity, 8, 3, humidity);
+
+  strcat(request, temp);
+  strcat(humText, humidity);
+  strcat(request, humText);
+
+  Serial.println(request);
+
+  int httpCode = http.POST(request);
+
+  String payload = http.getString(); //Get the response payload
+
+  Serial.println(httpCode); //Print HTTP return code
+  Serial.println(payload);  //Print request response payload
+
+  http.end();
+
+  delay(delayMS);
+  printValues();
 }
 
 void loop()
 {
   printValues();
-  delay(delayTime);
 }
