@@ -33,13 +33,13 @@ DHT_Unified dht(DHTPIN, DHTTYPE);
 
 #ifndef STASSID
 #define STASSID "iot-net"
-#define STAPSK "iotisfun8266"
+#define STAPSK "CHANGEME"
 #endif
 
 const char *ssid = STASSID;
 const char *password = STAPSK;
 
-const char *host = "weatherdash-api.app.maxemiliang.cloud";
+const char *host = "HOSTNAME";
 const int httpsPort = 443;
 const int httpPort = 80;
 
